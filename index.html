@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Children’s Health Hub · Caribbean (T&T First) — Online‑first · Offline‑ready</title>
+  <meta name="description" content="Privacy‑first children’s health hub for families, schools, and youth groups. Online‑first with offline fallback. Local‑only data, printable emergency cards, verified resource directory, safety playbooks. Single‑file PWA."/>
+  <meta name="theme-color" content="#0C1324"/>
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self' https://tile.openstreetmap.org https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://r.jina.ai;
+    img-src 'self' data: https://tile.openstreetmap.org;
+    style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
+    script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
+    connect-src 'self' https://r.jina.ai;
+    frame-ancestors 'none';
+    base-uri 'none';
+    upgrade-insecure-requests;
+  "/>
+
+  <!-- Minimal CDN libs (cached offline via SW) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <!-- Inline manifest for PWA -->
+  <link rel="manifest" href="data:application/json,{
+    &quot;name&quot;:&quot;Children’s Health Hub&quot;,
+    &quot;short_name&quot;:&quot;Health Hub&quot;,
+    &quot;start_url&quot;:&quot;./&quot;,
+    &quot;display&quot;:&quot;standalone&quot;,
+    &quot;background_color&quot;:&quot;#0C1324&quot;,
+    &quot;theme_color&quot;:&quot;#0C1324&quot;,
+    &quot;icons&quot;:[
+      {&quot;src&quot;:&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' fill='%230C1324'/%3E%3Ccircle cx='64' cy='64' r='36' fill='%237CC4FF'/%3E%3C/svg%3E&quot;, &quot;sizes&quot;:&quot;128x128&quot;, &quot;type&quot;:&quot;image/svg+xml&quot;}
+    ]
+  }">
+
+  <style>
+    :root{
+      --bg:#0C1324; --panel:#0F1A32; --elev:#131F3D; --txt:#EAF1FF; --muted:#9CB1D9;
+      --edge:#1e2b49; --accent:#7CC4FF; --accent2:#8EF0C3; --warn:#FFD166; --danger:#FF6B6B; --ok:#4ADE80;
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 900px at 80% -120%, #1A2B57 0%, rgba(26,43,87,0) 60%),
+        radial-gradient(900px 600px at -10% -60%, #122349 0%, rgba(18,35,73,0) 60%),
+        var(--bg);
+      color:var(--txt);
+      font:15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif
+    }
+    a{color:#a8d8ff}
+    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg, rgba(12,19,36,.95), rgba(12,19,36,.6));backdrop-filter:blur(6px);border-bottom:1px solid #1a2646}
+    .wrap{max-width:1200px;margin:0 auto;padding:14px 16px}
+    h1{margin:4px 0 2px;font-weight:800;letter-spacing:.2px}
+    .sub{color:var(--muted);font-size:13px}
+    main{display:grid;grid-template-columns:1.05fr .95fr;gap:14px;max-width:1200px;margin:16px auto;padding:0 16px}
+    .panel{background:linear-gradient(180deg, rgba(15,26,50,.92), rgba(15,26,50,.7));border:1px solid var(--edge);border-radius:var(--radius);padding:14px 14px 12px;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+    #map{width:100%;height:460px;border:1px solid #223053;border-radius:var(--radius);overflow:hidden}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{appearance:none;border:1px solid #274162;background:#0f1a32;color:var(--txt);padding:8px 12px;border-radius:12px;cursor:pointer}
+    .btn:hover{border-color:#3a64aa}
+    .btn-ok{border-color:#23573a;background:#10281D}
+    .btn-warn{border-color:#7a5b27;background:#2A1F10}
+    .btn-danger{border-color:#6b1f1f;background:#2A0F12}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .kpi{background:#0d1527;border:1px solid #1c2742;border-radius:12px;padding:10px}
+    .kpi .label{color:var(--muted);font-size:12px}
+    .kpi .value{font-weight:800;font-size:18px}
+    details{border:1px dashed #263655;border-radius:12px;padding:8px;margin:10px 0}
+    summary{cursor:pointer;color:#b8d4ff}
+    input,select,textarea{background:#0d1527;border:1px solid #1c2742;color:var(--txt);padding:9px;border-radius:10px}
+    textarea{min-height:84px}
+    .grid{display:grid;gap:10px}
+    .two{grid-template-columns:1fr 1fr}
+    .card{background:#0d1527;border:1px solid #1c2742;border-radius:12px;padding:10px;margin:8px 0}
+    .list{display:grid;gap:8px}
+    .badge{display:inline-block;border:1px solid #2a3b64;border-radius:999px;padding:2px 8px;margin:0 6px 6px 0;font-size:12px;color:#b9cff9}
+    .pill{border:1px solid #2a3b64;border-radius:999px;padding:4px 8px;font-size:12px;color:#b9cff9}
+    .notice{font-size:12px;color:#9bb3db;margin-top:6px}
+    footer{max-width:1200px;margin:20px auto 32px;color:var(--muted);padding:0 16px}
+    .tabbar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+    .tabbar button{border-radius:14px}
+    .label{font-size:12px;color:var(--muted)}
+    .danger{color:var(--danger)}
+    .ok{color:var(--ok)}
+    .warn{color:var(--warn)}
+    .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media (max-width:980px){ main{grid-template-columns:1fr} #map{height:360px} .kpis{grid-template-columns:repeat(2,1fr)} }
+    @media print{
+      body{background:#fff;color:#000}
+      header,footer,#map,.feedOnly,.tabbar{display:none!important}
+      .printCard,.printable{border:1px solid #000;padding:10px;border-radius:0}
+    }
+    .hc body, .hc .panel{filter:contrast(110%) saturate(110%)}
+  </style>
+</head>
+<body>
+  <a href="#main" class="sr-only">Skip to main content</a>
+
+  <!-- Header -->
+  <header role="banner">
+    <div class="wrap">
+      <h1 aria-label="Children’s Health Hub">
+        Children’s Health Hub
+        <span class="pill">Caribbean · T&T first</span>
+        <span class="pill">Online‑first · Offline‑ready</span>
+      </h1>
+      <div class="sub">
+        Modern, intuitive portal for caregivers, schools, and youth groups.
+        Local‑only data. Printable emergency cards. Verified resources.
+        <strong>Not medical advice</strong> — for information and preparedness only.
+      </div>
+
+      <div class="row" aria-label="Display options">
+        <button class="btn" id="btnLang">Language: EN</button>
+        <button class="btn" id="btnContrast">High contrast</button>
+      </div>
+
+      <details class="consent" aria-label="Privacy and use">
+        <summary>Privacy, safety, and how your data is handled</summary>
+        <ul>
+          <li><strong>Local‑only:</strong> All entries stay on your device unless you export a snapshot.</li>
+          <li><strong>No accounts:</strong> No signup, no login, no cloud backup.</li>
+          <li><strong>Emergency‑ready:</strong> Print cards for quick reference; always contact local services when urgent.</li>
+          <li><strong>Respectful use:</strong> Avoid entering sensitive personal identifiers that aren’t essential for safety.</li>
+        </ul>
+      </details>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main id="main" role="main" aria-live="polite">
+    <!-- Left column: map, feeds, actions -->
+    <section aria-labelledby="mapTitle">
+      <h2 id="mapTitle" class="sr-only">Map and feeds</h2>
+      <div id="map" role="application" aria-label="Local resources map"></div>
+
+      <div class="panel" style="margin-top:10px">
+        <div class="row" aria-label="Quick actions">
+          <button class="btn" id="btnRefreshFeeds">Refresh Health Feeds</button>
+          <button class="btn" id="btnExport">Export Snapshot (.json)</button>
+          <button class="btn btn-ok" id="btnImport">Import Snapshot (.json)</button>
+          <button class="btn btn-ok" id="btnInstall">Install App</button>
+          <button class="btn btn-danger" id="btnPanic">Panic (Wipe Local)</button>
+        </div>
+        <div class="notice">
+          All personal data stays on your device unless you choose to export.
+          In an emergency, call your local emergency number immediately.
+        </div>
+      </div>
+
+      <div class="panel feedOnly" aria-labelledby="feedsTitle">
+        <h2 id="feedsTitle">Health Feeds (UNICEF · PAHO/WHO)</h2>
+        <div id="feedList" class="card">Loading… (requires internet)</div>
+        <details>
+          <summary>About feeds & privacy</summary>
+          <p>Headlines are fetched via a CORS‑friendly mirror and are not personalized. No personal data is sent with these requests.</p>
+        </details>
+      </div>
+
+      <div class="panel" aria-labelledby="pulseTitle">
+        <h2 id="pulseTitle">Community Pulse</h2>
+        <div class="kpis" role="group" aria-label="Key indicators">
+          <div class="kpi"><div class="label">Resources listed (local)</div><div class="value" id="kpiClinics">0</div></div>
+          <div class="kpi"><div class="label">Emergency cards created</div><div class="value" id="kpiCards">0</div></div>
+          <div class="kpi"><div class="label">Safety playbooks saved</div><div class="value" id="kpiPlaybooks">0</div></div>
+          <div class="kpi"><div class="label">Offline ready</div><div class="value" id="kpiOffline">No</div></div>
+        </div>
+        <canvas id="chartImmun" height="120" aria-label="Immunization chart"></canvas>
+      </div>
+    </section>
+
+    <!-- Right column: tools -->
+    <aside class="panel" aria-labelledby="toolsTitle">
+      <h2 id="toolsTitle">Tools</h2>
+      <div class="tabbar" role="tablist" aria-label="Tool tabs">
+        <button class="btn" data-tab="directory" role="tab" aria-selected="true">Directory</button>
+        <button class="btn" data-tab="card" role="tab">Emergency Card</button>
+        <button class="btn" data-tab="playbooks" role="tab">Safety Playbooks</button>
+        <button class="btn" data-tab="wellness" role="tab">Digital Wellness</button>
+        <button class="btn" data-tab="library" role="tab">Health Library</button>
+        <button class="btn" data-tab="polls" role="tab">Community Polls</button>
+        <button class="btn" data-tab="badges" role="tab">Badges</button>
+        <button class="btn" data-tab="data" role="tab">Data</button>
+      </div>
+
+      <!-- Directory -->
+      <section data-panel="directory" role="tabpanel">
+        <div class="label">Verified resource directory (local)</div>
+
+        <details>
+          <summary>How to use the directory</summary>
+          <ul>
+            <li><strong>Add trusted facilities:</strong> Hospitals, clinics, pediatricians, pharmacies, hotlines, social services, mental health.</li>
+            <li><strong>Keep notes practical:</strong> Hours, accessibility, languages, services, directions, parking, child‑friendly spaces.</li>
+            <li><strong>Verify sources:</strong> Prefer official websites, public directories, or community organization listings.</li>
+            <li><strong>Privacy:</strong> Avoid personal patient details; store only publicly available facility info.</li>
+          </ul>
+        </details>
+
+        <div class="grid two">
+          <div class="field"><label>Facility name</label><input id="dirName" placeholder="Ex: San Fernando General Hospital" aria-label="Facility name"/></div>
+          <div class="field"><label>Type</label>
+            <select id="dirType" aria-label="Facility type">
+              <option>Hospital</option><option>Clinic</option><option>Pediatrician</option><option>Pharmacy</option>
+              <option>Hotline</option><option>Social Services</option><option>Mental Health</option><option>Other</option>
+            </select>
+          </div>
+          <div class="field"><label>Phone</label><input id="dirPhone" placeholder="e.g., +1 868 xxx xxxx" aria-label="Facility phone"/></div>
+          <div class="field"><label>Website</label><input id="dirUrl" placeholder="https://…" aria-label="Facility website"/></div>
+          <div class="field"><label>Latitude</label><input id="dirLat" type="number" step="any" placeholder="10.29" aria-label="Latitude"/></div>
+          <div class="field"><label>Longitude</label><input id="dirLng" type="number" step="any" placeholder="-61.46" aria-label="Longitude"/></div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Notes (no personal identifiers)</label>
+            <textarea id="dirNotes" placeholder="Ex: 24/7 emergency; pediatric wing; wheelchair accessible; easy bus route." aria-label="Notes"></textarea>
+            <div class="notice"><strong>Tip:</strong> Add accessibility features, child‑friendly waiting areas, interpreter availability, or vaccination days.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ok" id="btnAddDir">Add to Directory</button>
+          <button class="btn" id="btnClearDir">Clear Directory (local)</button>
+        </div>
+
+        <div id="dirList" class="list" aria-live="polite"></div>
+
+        <details>
+          <summary>Examples of helpful directory entries</summary>
+          <ul>
+            <li><strong>Hospital:</strong> “Main pediatric ER entrance near south parking; 24/7 pharmacy; lactation room.”</li>
+            <li><strong>Clinic:</strong> “Walk‑in Mon–Fri 9am–1pm; wheelchair access at east entrance; accepts local insurance A/B.”</li>
+            <li><strong>Mental Health:</strong> “Youth counseling; private rooms; bilingual staff (EN/ES).”</li>
+            <li><strong>Hotline:</strong> “Free 24/7; trained counselors; connects with social services.”</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- Emergency Card -->
+      <section data-panel="card" role="tabpanel" hidden>
+        <div class="label">Create a printable emergency card (local‑only)</div>
+
+        <details>
+          <summary>What to include and safety tips</summary>
+          <ul>
+            <li><strong>Essentials:</strong> Name, birthdate (optional), primary/secondary contacts, allergies, medications, critical info.</li>
+            <li><strong>Keep it minimal:</strong> Avoid sensitive identifiers not needed in emergencies.</li>
+            <li><strong>Print and carry:</strong> Keep a copy in bag and at school; update each term or season.</li>
+            <li><strong>Share carefully:</strong> Provide copies to trusted adults and program staff only.</li>
+          </ul>
+        </details>
+
+        <div class="grid two">
+          <div class="field"><label>Child’s name</label><input id="ecName" aria-label="Child's name"/></div>
+          <div class="field"><label>Birthdate</label><input id="ecDob" type="date" aria-label="Birthdate"/></div>
+          <div class="field"><label>Primary contact</label><input id="ecContact1" placeholder="Parent/Guardian + phone" aria-label="Primary contact"/></div>
+          <div class="field"><label>Secondary contact</label><input id="ecContact2" aria-label="Secondary contact"/></div>
+          <div class="field"><label>Allergies</label><input id="ecAllergies" placeholder="Peanuts, penicillin…" aria-label="Allergies"/></div>
+          <div class="field"><label>Medications</label><input id="ecMeds" aria-label="Medications"/></div>
+          <div class="field" style="grid-column:1/-1"><label>Other critical info</label><textarea id="ecOther" placeholder="Ex: Action plan, physician name, communication preferences." aria-label="Other info"></textarea></div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ok" id="btnSaveCard">Save Locally</button>
+          <button class="btn" id="btnPrintCard">Print</button>
+          <button class="btn" id="btnClearCards">Clear Saved Cards</button>
+        </div>
+
+        <div id="cardList" class="list"></div>
+
+        <div class="notice"><strong>Local‑only:</strong> Cards are stored locally and never sent anywhere. Print a physical copy and keep sensitive details secure.</div>
+
+        <details>
+          <summary>Template example</summary>
+          <div class="card printCard">
+            <div><strong>Example Child</strong> · <small>2008‑08‑08</small></div>
+            <div><strong>Primary:</strong> Parent (+1 868 555‑1234) · <strong>Secondary:</strong> Aunt (+1 868 555‑5678)</div>
+            <div><strong>Allergies:</strong> Peanuts · <strong>Meds:</strong> Rescue inhaler</div>
+            <div><strong>Other:</strong> “Prefers calm voice; action plan at school office.”</div>
+            <div><small>Saved: 2025‑12‑01 15:00</small></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Safety Playbooks -->
+      <section data-panel="playbooks" role="tabpanel" hidden>
+        <div class="label">Quick safety guides (edit locally)</div>
+
+        <details>
+          <summary>How the playbooks work</summary>
+          <ul>
+            <li><strong>General guidance:</strong> Clear steps for school/caregiver response, escalation signals, documentation suggestions.</li>
+            <li><strong>Local edits:</strong> Add school‑specific protocols, contact points, staging areas.</li>
+            <li><strong>Print‑friendly:</strong> Keep concise with bullets or numbered steps.</li>
+            <li><strong>No medical dosing:</strong> Avoid individualized dosing; escalate to trained staff and emergency services when necessary.</li>
+          </ul>
+        </details>
+
+        <div class="grid two">
+          <div class="field" style="grid-column:1/-1"><label>Select template</label>
+            <select id="pbTemplate" aria-label="Playbook template">
+              <option value="asthma">Asthma flare (school)</option>
+              <option value="injury">Sports injury</option>
+              <option value="heat">Heat stress</option>
+              <option value="hurricane">Hurricane preparedness</option>
+              <option value="cyber">Cyberbullying response</option>
+              <option value="missing_child">Missing child protocol</option>
+              <option value="school_outbreak">School illness outbreak</option>
+            </select>
+          </div>
+
+          <div class="field" style="grid-column:1/-1"><label>Playbook (editable)</label>
+            <textarea id="pbText" spellcheck="false" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;min-height:260px" aria-label="Playbook text"></textarea>
+            <div class="notice"><strong>Tip:</strong> Include “When to escalate” and “Who to inform” checklists at the end.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ok" id="btnSavePB">Save Playbook</button>
+          <button class="btn" id="btnResetPB">Reset Template</button>
+        </div>
+
+        <div id="pbList" class="list"></div>
+
+        <details>
+          <summary>Template examples (inline)</summary>
+          <div class="card"><pre>ASTHMA (SCHOOL)
+1) Calm child; seat comfortably; reassure.
+2) Use reliever per child’s action plan if available.
+3) Severe distress (blue lips, difficulty speaking, worsening breathing) → Contact emergency services.
+4) If not improving, follow school protocol and notify trained staff.
+5) Notify caregiver and document actions/time.</pre></div>
+          <div class="card"><pre>SPORTS INJURY
+1) Stop play; check airway, breathing, circulation.
+2) Sprains: rest, gentle cooling, compression, elevation; avoid excessive pressure.
+3) Head injury red flags (confusion, vomiting, loss of consciousness) → Contact emergency services.
+4) Document incident; notify caregiver/school lead.</pre></div>
+          <div class="card"><pre>HEAT STRESS
+1) Move to shade/cool area; offer water if safe.
+2) Cool with water and airflow; loosen tight clothing.
+3) Confusion, fainting, hot dry skin → Contact emergency services.</pre></div>
+          <div class="card"><pre>HURRICANE PREPAREDNESS
+• Family kit: water, food, meds, flashlights, copies of documents.
+• Plan: meeting point, contacts, power banks, offline maps.
+• Follow official advisories and local authority guidance.</pre></div>
+        </details>
+      </section>
+
+      <!-- Digital Wellness -->
+      <section data-panel="wellness" role="tabpanel" hidden>
+        <div class="label">Healthy tech habits</div>
+
+        <details>
+          <summary>Why log your digital habits?</summary>
+          <ul>
+            <li><strong>Awareness:</strong> See patterns over days and weeks.</li>
+            <li><strong>Reflection:</strong> Mood notes connect online time with how you feel.</li>
+            <li><strong>Gentle goals:</strong> Set realistic targets; celebrate progress with badges.</li>
+            <li><strong>Local‑only:</strong> Logs never leave your device unless exported.</li>
+          </ul>
+        </details>
+
+        <div class="grid two">
+          <div class="field"><label>Daily screen time goal (min)</label><input id="dwGoal" type="number" value="120" aria-label="Screen time goal"/></div>
+          <div class="field"><label>Today’s screen time (min)</label><input id="dwToday" type="number" value="0" aria-label="Screen time used"/></div>
+          <div class="field" style="grid-column:1/-1"><label>Mood note</label><textarea id="dwMood" placeholder="How did you feel online today? Calm, engaged, stressed, happy, etc." aria-label="Mood note"></textarea></div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ok" id="btnAddDW">Log Entry</button>
+          <button class="btn" id="btnClearDW">Clear Logs</button>
+        </div>
+
+        <div class="card"><canvas id="chartDW" height="140" aria-label="Digital wellness chart"></canvas></div>
+
+        <details>
+          <summary>Ideas for healthy digital balance</summary>
+          <ul>
+            <li><strong>Boundaries:</strong> Device‑free times (meals, pre‑bed wind‑down).</li>
+            <li><strong>Mix it up:</strong> Pair online time with outdoor activities or hobbies.</li>
+            <li><strong>Sleep‑friendly:</strong> Reduce bright screens before bed.</li>
+            <li><strong>Community:</strong> Share offline plans with friends/family.</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- Health Library -->
+      <section data-panel="library" role="tabpanel" hidden>
+        <div class="label">Health Library (printable)</div>
+
+        <details>
+          <summary>How to use these sheets</summary>
+          <ul>
+            <li><strong>General guidance:</strong> Quick tips for caregivers, teachers, youth groups.</li>
+            <li><strong>Print & post:</strong> Staff rooms, school offices, community centers.</li>
+            <li><strong>Localize:</strong> Add local contacts, meeting points, facility directions.</li>
+            <li><strong>Not medical advice:</strong> Escalate to emergency services when needed.</li>
+          </ul>
+        </details>
+
+        <div class="grid two">
+          <div class="card printable">
+            <h3>First Aid Basics</h3>
+            <ul>
+              <li><strong>Choking:</strong> Encourage coughing; if breathing is severely affected, contact emergency services.</li>
+              <li><strong>Burns:</strong> Cool with clean, cool water; avoid ice; cover loosely; seek help if severe or large area.</li>
+              <li><strong>Bleeding:</strong> Apply gentle pressure with clean cloth; elevate if possible; seek help if heavy bleeding.</li>
+              <li><strong>CPR summary:</strong> Contact emergency services; follow trained guidance; use AED if available.</li>
+              <li><strong>Documentation:</strong> Note time, actions taken, and who was informed.</li>
+            </ul>
+          </div>
+
+          <div class="card printable">
+            <h3>Nutrition for Kids</h3>
+            <ul>
+              <li><strong>Balanced plate:</strong> Fruits/veg, whole grains, protein, healthy fats; make meals colorful.</li>
+              <li><strong>Hydration:</strong> Water first; limit sugary drinks; encourage refillable bottles.</li>
+              <li><strong>Local swaps:</strong> Prefer grilled/baked over fried; include local produce; watch portions.</li>
+              <li><strong>Snack ideas:</strong> Fruit, yogurt, nuts (if safe), whole‑grain options.</li>
+              <li><strong>Family habits:</strong> Eat together when possible; involve kids in meal prep.</li>
+            </ul>
+          </div>
+
+          <div class="card printable">
+            <h3>Mental Health Awareness</h3>
+            <ul>
+              <li><strong>Notice:</strong> Sleep changes, mood swings, withdrawal, school disengagement.</li>
+              <li><strong>Supports:</strong> Trusted adults, school counselors, supportive peers, routines.</li>
+              <li><strong>Online stress:</strong> Talk through tough interactions; set boundaries; encourage breaks.</li>
+              <li><strong>Urgent:</strong> If immediate safety is at risk, contact emergency services.</li>
+              <li><strong>Communication:</strong> Use calm, non‑judgmental language; validate feelings.</li>
+            </ul>
+          </div>
+
+          <div class="card printable">
+            <h3>Disaster Preparedness</h3>
+            <ul>
+              <li><strong>Family kit:</strong> Water, non‑perishables, meds, flashlights, batteries, document copies.</li>
+              <li><strong>Plan:</strong> Meeting point, contacts, power banks, offline maps, some cash.</li>
+              <li><strong>Home safety:</strong> Secure loose items, know shut‑off points (water, electricity).</li>
+              <li><strong>Info sources:</strong> Follow local advisories via official channels.</li>
+              <li><strong>Practice:</strong> Run family drills; review roles; ensure kids know who to reach.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Community Polls -->
+      <section data-panel="polls" role="tabpanel" hidden>
+        <div class="label">Community Polls (local‑only)</div>
+
+        <details>
+          <summary>About these polls</summary>
+          <ul>
+            <li><strong>Anonymous:</strong> Results are device‑local and not shared.</li>
+            <li><strong>Pulse checks:</strong> Insight into preparedness and balance habits.</li>
+            <li><strong>Use ethically:</strong> Avoid personal or sensitive health details.</li>
+            <li><strong>Share offline:</strong> Export a snapshot to discuss with your community.</li>
+          </ul>
+        </details>
+
+        <div class="card">
+          <p>How prepared do you feel for emergencies?</p>
+          <div class="row">
+            <button class="btn" data-poll="prep_level" data-val="Very prepared">Very Prepared</button>
+            <button class="btn" data-poll="prep_level" data-val="Somewhat prepared">Somewhat Prepared</button>
+            <button class="btn" data-poll="prep_level" data-val="Not prepared">Not Prepared</button>
+          </div>
+          <div class="notice"><strong>Tip:</strong> If “Not prepared” is common, host a family kit workshop.</div>
+        </div>
+
+        <div class="card">
+          <p>How balanced was today’s screen time?</p>
+          <div class="row">
+            <button class="btn" data-poll="wellness_balance" data-val="On target">On target</button>
+            <button class="btn" data-poll="wellness_balance" data-val="A bit high">A bit high</button>
+            <button class="btn" data-poll="wellness_balance" data-val="Much higher">Much higher</button>
+          </div>
+          <div class="notice"><strong>Tip:</strong> Pair screen time with outdoor or creative activities.</div>
+        </div>
+
+        <div class="card"><canvas id="chartPolls" height="140" aria-label="Community polls chart"></canvas></div>
+
+        <details>
+          <summary>Ideas for new polls</summary>
+          <ul>
+            <li><strong>Contacts readiness:</strong> “Do you have updated emergency contact sheets?”</li>
+            <li><strong>Safety training:</strong> “Have staff completed basic first aid?”</li>
+            <li><strong>Wellness routines:</strong> “Do you have device‑free times at home?”</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- Badges -->
+      <section data-panel="badges" role="tabpanel" hidden>
+        <div class="label">Wellness Badges</div>
+
+        <details>
+          <summary>How badges work</summary>
+          <ul>
+            <li><strong>Positive reinforcement:</strong> Celebrate healthy and safe behaviors.</li>
+            <li><strong>No shaming:</strong> Badges encourage; they don’t judge.</li>
+            <li><strong>Local‑only:</strong> Badge status is stored on your device.</li>
+            <li><strong>Share offline:</strong> Export if you want to show progress to your group.</li>
+          </ul>
+        </details>
+
+        <div class="list" id="badgesList"></div>
+
+        <details>
+          <summary>Examples of unlock triggers</summary>
+          <ul>
+            <li><strong>🏅 Screen‑time Goal Met:</strong> At least one day where used minutes ≤ goal minutes.</li>
+            <li><strong>📘 Safety Playbook Saved:</strong> You saved any customized safety playbook.</li>
+            <li><strong>🗺️ Directory Contribution:</strong> You added at least four verified local resources.</li>
+          </ul>
+        </details>
+
+        <div class="card">
+          <p><strong>Make it fun:</strong> Try a weekly “badge round‑up” and invite kids to set simple goals (e.g., two device‑free dinners).</p>
+        </div>
+      </section>
+
+      <!-- Data Editor -->
+      <section data-panel="data" role="tabpanel" hidden>
+        <div class="label">Local data editor</div>
+
+        <details>
+          <summary>What this editor can do</summary>
+          <ul>
+            <li><strong>Inspect:</strong> View the full JSON state (directory, cards, playbooks, wellness logs, polls, indicators).</li>
+            <li><strong>Edit:</strong> Modify fields, add new entries, tweak indicators.</li>
+            <li><strong>Reset:</strong> Revert to defaults if needed.</li>
+            <li><strong>Privacy:</strong> Edits remain on your device unless exported.</li>
+          </ul>
+        </details>
+
+        <div class="field">
+          <label for="jsonEditor">JSON state</label>
+          <textarea id="jsonEditor" spellcheck="false" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;min-height:280px" aria-label="JSON editor"></textarea>
+          <div class="notice"><strong>Tip:</strong> Keep structure consistent. Export a snapshot before large edits.</div>
+        </div>
+
+        <div class="row">
+          <button class="btn" id="btnApply">Apply</button>
+          <button class="btn" id="btnReset">Reset to Defaults</button>
+          <button class="btn btn-ok" id="btnExport">Export Snapshot (.json)</button>
+          <button class="btn btn-ok" id="btnImport">Import Snapshot (.json)</button>
+          <button class="btn btn-danger" id="btnPanic">Panic (Wipe Local)</button>
+        </div>
+
+        <details>
+          <summary>Schema overview</summary>
+          <ul>
+            <li><strong>meta:</strong> app info (updated, region, focus, offlineReady, lang, highContrast)</li>
+            <li><strong>directory:</strong> resources {name, type, phone, url, lat, lng, notes}</li>
+            <li><strong>cards:</strong> emergency cards {name, dob, c1, c2, allergies, meds, other, ts}</li>
+            <li><strong>playbooks:</strong> guides {id, tpl, text, ts}</li>
+            <li><strong>digitalWellness:</strong> logs {goal, used, mood, ts}</li>
+            <li><strong>indicators:</strong> illustrative {immunCoverageTT, immunTarget}</li>
+            <li><strong>polls:</strong> counts by question (prep_level, wellness_balance)</li>
+          </ul>
+        </details>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Footer -->
+  <footer role="contentinfo">
+    <div>
+      <strong>Disclaimer:</strong> Informational only; not a substitute for professional medical advice, diagnosis, or treatment.
+      In an emergency, call local emergency services. This PWA is privacy‑first (local‑only). No personal data is transmitted unless you export it.
+    </div>
+  </footer>
+  <script>
+  // Helpers
+  const $ = sel => document.querySelector(sel);
+  function el(tag, attrs={}, children=[]) { const n=document.createElement(tag); for(const [k,v] of Object.entries(attrs)){ if(k==="class") n.className=v; else if(k==="html") n.innerHTML=v; else n.setAttribute(k,v);} children.forEach(c=>n.append(c)); return n; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m])); }
+
+  // Default state
+  const DEFAULT = {
+    meta: { updated: new Date().toISOString(), region: "Caribbean", focus: "T&T first", offlineReady: false, lang: "en", highContrast: false },
+    directory: [
+      { name:"Eric Williams Medical Sciences Complex", type:"Hospital", phone:"+1 868 645 2640", url:"https://www.health.gov.tt/", lat:10.640, lng:-61.401, notes:"Major public hospital; emergency services; pediatric care." },
+      { name:"San Fernando General Hospital", type:"Hospital", phone:"+1 868 225 4325", url:"https://www.health.gov.tt/", lat:10.274, lng:-61.466, notes:"Public hospital; pediatric care available." },
+      { name:"ChildLine (Hotline)", type:"Hotline", phone:"131 or +1 868 800-4321", url:"https://childlinett.org/", lat:10.66, lng:-61.51, notes:"Free 24/7 helpline for children & families." },
+      { name:"North Central Regional Health Authority", type:"Clinic", phone:"+1 868 642 321", url:"https://ncrha.co.tt/", lat:10.626, lng:-61.427, notes:"Outpatient services; accessibility features vary by site." }
+    ],
+    cards: [],
+    playbooks: [],
+    digitalWellness: [],
+    indicators: { immunCoverageTT: 85, immunTarget: 95 },
+    polls: {
+      prep_level: {"Very prepared":0,"Somewhat prepared":0,"Not prepared":0},
+      wellness_balance: {"On target":0,"A bit high":0,"Much higher":0}
+    }
+  };
+
+  const LS_KEY = 'child-health-hub@state-v2';
+  let STATE = loadState();
+  function loadState(){ try{ const raw = localStorage.getItem(LS_KEY); if(raw) return JSON.parse(raw);}catch(e){} return structuredClone(DEFAULT); }
+  function saveState(){ STATE.meta.updated = new Date().toISOString(); localStorage.setItem(LS_KEY, JSON.stringify(STATE)); renderKPIs(); }
+
+  // Accessibility toggles
+  $('#btnContrast')?.addEventListener('click', ()=>{
+    STATE.meta.highContrast = !STATE.meta.highContrast;
+    document.documentElement.classList.toggle('hc', STATE.meta.highContrast);
+    saveState();
+  });
+  $('#btnLang')?.addEventListener('click', ()=>{
+    STATE.meta.lang = STATE.meta.lang === 'en' ? 'es' : 'en';
+    $('#btnLang').textContent = 'Language: ' + (STATE.meta.lang.toUpperCase());
+    saveState();
+  });
+
+  // Map
+  let map, markers=[];
+  function initMap(){
+    map = L.map('map',{worldCopyJump:true, minZoom:2, attributionControl:true}).setView([10.6918,-61.2225],8);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+    renderMarkers();
+  }
+  function renderMarkers(){
+    markers.forEach(m=>m.remove()); markers=[];
+    STATE.directory.forEach((d)=>{
+      if(typeof d.lat!=="number"||typeof d.lng!=="number") return;
+      const icon=L.divIcon({className:'',html:`<div style="transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#7CC4FF;box-shadow:0 0 0 2px rgba(0,0,0,.35)"></div>`});
+      const m=L.marker([d.lat,d.lng],{icon}).addTo(map);
+      m.bindPopup(`<strong>${escapeHtml(d.name)}</strong><br/><small>${escapeHtml(d.type)}</small><br/>${d.phone?`☎ ${escapeHtml(d.phone)}<br/>`:''}${d.url?`<a href="${escapeHtml(d.url)}" target="_blank" rel="noopener">Website</a><br/>`:''}<span class="badge">Verified local</span><br/><small>${escapeHtml(d.notes||'')}</small>`);
+      markers.push(m);
+    });
+  }
+
+  // Feeds
+  const FEEDS=[
+    {name:'UNICEF — Press', url:'https://r.jina.ai/http://www.unicef.org/press-releases/rss.xml'},
+    {name:'PAHO/WHO — News', url:'https://r.jina.ai/https://www.paho.org/en/rss.xml'}
+  ];
+  async function refreshFeeds(){
+    const box=$('#feedList'); if(!box) return; box.textContent='Loading…';
+    const items=[];
+    for(const f of FEEDS){
+      try{
+        const res=await fetch(f.url,{cache:'no-store'}); const txt=await res.text();
+        const matches=[...txt.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0,5);
+        const parsed=matches.map(m=>({
+          title:(m[1].match(/<title><!
+
+\[CDATA
+
+\[(.*?)\]
+
+\]
+
+><\/title>|<title>(.*?)<\/title>/)||[])[1]||RegExp.$2||'Untitled',
+          link:(m[1].match(/<link>(.*?)<\/link>/)||[])[1]||'#',
+          date:(m[1].match(/<pubDate>(.*?)<\/pubDate>/)||[])[1]||''
+        }));
+        items.push({feed:f.name, entries:parsed});
+      }catch(e){ items.push({feed:f.name, error:e.message}); }
+    }
+    box.innerHTML='';
+    items.forEach(pkg=>{
+      const d=el('div',{class:'card'},[el('div',{html:`<strong>${pkg.feed}</strong>`})]);
+      if(pkg.error){ d.append(el('div',{html:`<em>Error:</em> ${escapeHtml(pkg.error)}`})); }
+      (pkg.entries||[]).forEach(it=> d.append(el('div',{html:`<a href="${escapeHtml(it.link)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a><br/><small>${escapeHtml(it.date)}</small>`})));
+      box.append(d);
+    });
+  }
+
+  // KPIs & Charts
+  function renderKPIs(){
+    $('#kpiClinics')?.textContent=STATE.directory.length;
+    $('#kpiCards')?.textContent=STATE.cards.length;
+    $('#kpiPlaybooks')?.textContent=STATE.playbooks.length;
+    $('#kpiOffline')?.textContent=STATE.meta.offlineReady? 'Yes':'No';
+  }
+  function renderCharts(){
+    const ctx1=document.getElementById('chartImmun'); if(!ctx1) return;
+    new Chart(ctx1,{
+      type:'bar',
+      data:{labels:['Coverage','Target'],
+        datasets:[{label:'Immunization % (illustrative)',data:[STATE.indicators.immunCoverageTT, STATE.indicators.immunTarget], backgroundColor:['#7CC4FF','#8EF0C3'], borderWidth:2}]},
+      options:{plugins:{legend:{display:false}},
+        scales:{y:{ticks:{color:'#b9cff9'}, grid:{color:'rgba(255,255,255,.06)'}}, x:{ticks:{color:'#b9cff9'}, grid:{color:'rgba(255,255,255,.06)'}}}}
+    });
+  }
+
+  // Directory
+  function initDirectory(){
+    const addBtn = $('#btnAddDir');
+    const clearBtn = $('#btnClearDir');
+    addBtn && (addBtn.onclick=()=>{
+      const d={
+        name:$('#dirName').value.trim(),
+        type:$('#dirType').value,
+        phone:$('#dirPhone').value.trim(),
+        url:$('#dirUrl').value.trim(),
+        lat:parseFloat($('#dirLat').value),
+        lng:parseFloat($('#dirLng').value),
+        notes:$('#dirNotes').value.trim()
+      };
+      if(!d.name){ alert('Name is required'); return; }
+      STATE.directory.push(d); saveState(); renderDir(); renderMarkers(); clearDirForm();
+    });
+    clearBtn && (clearBtn.onclick=()=>{ if(confirm('Clear local directory?')){ STATE.directory=[]; saveState(); renderDir(); renderMarkers(); }});
+    renderDir();
+  }
+  function clearDirForm(){ ['dirName','dirPhone','dirUrl','dirLat','dirLng','dirNotes'].forEach(id=>{ const n=$('#'+id); if(n) n.value=''; }); }
+  function renderDir(){
+    const box=$('#dirList'); if(!box) return; box.innerHTML='';
+    STATE.directory.slice().reverse().forEach((d,idx)=>{
+      const i=STATE.directory.length-1-idx;
+      const row=el('div',{class:'card'},[
+        el('div',{html:`<strong>${escapeHtml(d.name)}</strong> · <small>${escapeHtml(d.type)}</small>`}),
+        el('div',{html:`${d.phone?`☎ ${escapeHtml(d.phone)} · `:''}${d.url?`<a href='${escapeHtml(d.url)}' target='_blank' rel='noopener'>Website</a>`:''}`}),
+        el('div',{html:escapeHtml(d.notes||'')}),
+        el('div',{class:'row'},[
+          el('button',{class:'btn', html:'Focus on map'}),
+          el('button',{class:'btn btn-danger', html:'Remove'})
+        ])
+      ]);
+      const [bFocus,bRemove]=row.querySelectorAll('button');
+      bFocus.onclick=()=>{ if(typeof d.lat==='number'&&typeof d.lng==='number'){ map.setView([d.lat,d.lng], 14);} };
+      bRemove.onclick=()=>{ if(confirm('Remove this entry?')){ STATE.directory.splice(i,1); saveState(); renderDir(); renderMarkers(); } };
+      box.append(row);
+    });
+  }
+
+  // Emergency Cards
+  function initCards(){
+    const saveBtn = $('#btnSaveCard');
+    const printBtn = $('#btnPrintCard');
+    const clearBtn = $('#btnClearCards');
+
+    saveBtn && (saveBtn.onclick=()=>{
+      const c={
+        name:$('#ecName').value.trim(),
+        dob:$('#ecDob').value,
+        c1:$('#ecContact1').value.trim(),
+        c2:$('#ecContact2').value.trim(),
+        allergies:$('#ecAllergies').value.trim(),
+        meds:$('#ecMeds').value.trim(),
+        other:$('#ecOther').value.trim(),
+        ts:new Date().toISOString()
+      };
+      if(!c.name||!c.c1){ alert('Child name and primary contact are required.'); return; }
+      (STATE.cards ||= []).push(c); saveState(); renderCards();
+    });
+
+    printBtn && (printBtn.onclick=()=>{ window.print(); });
+    clearBtn && (clearBtn.onclick=()=>{ if(confirm('Clear all local cards?')){ STATE.cards=[]; saveState(); renderCards(); } });
+    renderCards();
+  }
+  function renderCards(){
+    const box=$('#cardList'); if(!box) return; box.innerHTML='';
+    (STATE.cards||[]).slice().reverse().forEach(c=>{
+      box.append(el('div',{class:'card printCard'},[
+        el('div',{html:`<strong>${escapeHtml(c.name)}</strong> · <small>${escapeHtml(c.dob||'DOB N/A')}</small>`}),
+        el('div',{html:`<strong>Primary:</strong> ${escapeHtml(c.c1)}${c.c2?` · <strong>Secondary:</strong> ${escapeHtml(c.c2)}`:''}`}),
+        el('div',{html:`<strong>Allergies:</strong> ${escapeHtml(c.allergies||'None')} · <strong>Meds:</strong> ${escapeHtml(c.meds||'N/A')}`}),
+        el('div',{html:`<strong>Other:</strong> ${escapeHtml(c.other||'—')}`}),
+        el('div',{html:`<small>Saved: ${new Date(c.ts).toLocaleString()}</small>`})
+      ]));
+    });
+  }
+
+  // Playbooks
+  const PB_TPL={
+    asthma:`ASTHMA (SCHOOL)
+1) Calm child; seat comfortably; reassure.
+2) Use reliever per child’s action plan if available.
+3) Severe distress (blue lips, difficulty speaking, worsening breathing) → Contact emergency services.
+4) If not improving, follow school protocol and notify trained staff.
+5) Notify caregiver and document actions/time.`,
+    injury:`SPORTS INJURY
+1) Stop play; check airway, breathing, circulation.
+2) Sprains: rest, gentle cooling, compression, elevation; avoid excessive pressure.
+3) Head injury red flags (confusion, vomiting, loss of consciousness) → Contact emergency services.
+4) Document incident; notify caregiver/school lead.`,
+    heat:`HEAT STRESS
+1) Move to shade/cool area; offer water if safe.
+2) Cool with water and airflow; loosen tight clothing.
+3) Confusion, fainting, hot dry skin → Contact emergency services.`,
+    hurricane:`HURRICANE PREPAREDNESS
+• Family kit: water, food, meds, flashlights, copies of documents.
+• Plan: meeting point, contacts, power banks, offline maps.
+• Follow official advisories and local authority guidance.`,
+    cyber:`CYBERBULLYING RESPONSE
+1) Screenshot evidence without engaging.
+2) Report through platform tools and school channels.
+3) If threats or safety concerns → Contact relevant authorities.
+4) Support the child; consider school counselor involvement.`,
+    missing_child:`MISSING CHILD PROTOCOL
+1) Alert responsible adults and school administration.
+2) Check last known location and safe areas; do not put others at risk.
+3) Contact authorities promptly with non-sensitive descriptors.
+4) Document timeline and actions.`,
+    school_outbreak:`SCHOOL ILLNESS OUTBREAK (GENERAL)
+1) Encourage staying home if sick; promote hand hygiene.
+2) Follow school and local public health guidance.
+3) Clean high-touch surfaces; ventilate shared spaces.
+4) Communicate clearly with caregivers without sharing personal health details.`
+  };
+  function initPlaybooks(){
+    const sel=$('#pbTemplate'), area=$('#pbText');
+    function loadTpl(){ if(area && sel) area.value=PB_TPL[sel.value]; }
+    if(sel){ loadTpl(); sel.onchange=loadTpl; }
+    const saveBtn=$('#btnSavePB'), resetBtn=$('#btnResetPB');
+    saveBtn && (saveBtn.onclick=()=>{
+      const txt=area.value.trim(); if(!txt) return;
+      (STATE.playbooks ||= []).push({id:crypto.randomUUID(), tpl:sel.value, text:txt, ts:new Date().toISOString()});
+      saveState(); renderPB();
+    });
+    resetBtn && (resetBtn.onclick=loadTpl);
+    renderPB();
+  }
+  function renderPB(){
+    const box=$('#pbList'); if(!box) return; box.innerHTML='';
+    (STATE.playbooks||[]).slice().reverse().forEach(p=>{
+      box.append(el('div',{class:'card'},[
+        el('div',{html:`<strong>${escapeHtml(p.tpl.toUpperCase())}</strong> · <small>${new Date(p.ts).toLocaleString()}</small>`}),
+        el('pre',{html:escapeHtml(p.text)})
+      ]));
+    });
+  }
+
+  // Digital Wellness
+  let chartDW;
+  function initDW(){
+    const addBtn=$('#btnAddDW'), clearBtn=$('#btnClearDW');
+    addBtn && (addBtn.onclick=()=>{
+      const entry={
+        goal:parseInt($('#dwGoal').value||'0',10),
+        used:parseInt($('#dwToday').value||'0',10),
+        mood:$('#dwMood').value.trim(),
+        ts:new Date().toISOString()
+      };
+      (STATE.digitalWellness ||= []).push(entry); saveState(); renderDW(); renderBadges();
+    });
+    clearBtn && (clearBtn.onclick=()=>{ if(confirm('Clear wellness logs?')){ STATE.digitalWellness=[]; saveState(); renderDW(); renderBadges(); } });
+    renderDW();
+  }
+  function renderDW(){
+    const ctx=document.getElementById('chartDW'); if(!ctx) return;
+    const labels=(STATE.digitalWellness||[]).map(e=> new Date(e.ts).toLocaleDateString());
+    const dataUsed=(STATE.digitalWellness||[]).map(e=> e.used);
+    const dataGoal=(STATE.digitalWellness||[]).map(e=> e.goal);
+    if(chartDW) chartDW.destroy();
+    chartDW=new Chart(ctx,{
+      type:'line',
+      data:{ labels,
+        datasets:[
+          {label:'Used (min)',data:dataUsed,borderColor:'#FF6B6B',backgroundColor:'rgba(255,107,107,.15)',borderWidth:2},
+          {label:'Goal (min)',data:dataGoal,borderColor:'#4ADE80',backgroundColor:'rgba(74,222,128,.15)',borderWidth:2}
+        ]},
+      options:{plugins:{legend:{display:true,labels:{color:'#b9cff9'}}},
+        scales:{y:{ticks:{color:'#b9cff9'},grid:{color:'rgba(255,255,255,.06)'}},x:{ticks:{color:'#b9cff9'},grid:{color:'rgba(255,255,255,.06)'}}}}
+    });
+  }
+
+  // Polls
+  let chartPolls;
+  function initPolls(){
+    document.querySelectorAll('[data-panel="polls"] .btn[data-poll]').forEach(b=>{
+      b.onclick=()=>{
+        const id=b.getAttribute('data-poll'), val=b.getAttribute('data-val');
+        if(!STATE.polls[id]) STATE.polls[id]={};
+        STATE.polls[id][val]=(STATE.polls[id][val]||0)+1;
+        saveState(); renderPolls();
+      };
+    });
+    renderPolls();
+  }
+  function renderPolls(){
+    const ctx=document.getElementById('chartPolls'); if(!ctx) return;
+    const prepared=STATE.polls.prep_level || {"Very prepared":0,"Somewhat prepared":0,"Not prepared":0};
+    const labels=Object.keys(prepared);
+    const values=labels.map(k=>prepared[k]);
+    if(chartPolls) chartPolls.destroy();
+    chartPolls=new Chart(ctx,{type:'pie',data:{labels,datasets:[{data:values,backgroundColor:['#4ADE80','#FFD166','#FF6B6B']}]},options:{plugins:{legend:{labels:{color:'#b9cff9'}}}}});
+  }
+
+  // Badges
+  function renderBadges(){
+    const box=$('#badgesList'); if(!box) return; box.innerHTML='';
+    if((STATE.digitalWellness||[]).some(e=> e.used<=e.goal)){ box.append(el('div',{class:'badge',html:'🏅 Screen‑time Goal Met'})); }
+    if(STATE.playbooks.length>0){ box.append(el('div',{class:'badge',html:'📘 Safety Playbook Saved'})); }
+    if(STATE.directory.length>=4){ box.append(el('div',{class:'badge',html:'🗺️ Directory Contribution'})); }
+    if(!box.childElementCount){ box.append(el('div',{class:'notice',html:'No badges yet — healthy habits unlock badges.'})); }
+  }
+
+  // Data editor / Export / Import / Install / Panic
+  function initEditor(){
+    const ed=$('#jsonEditor'); if(!ed) return;
+    function refresh(){ ed.value=JSON.stringify(STATE,null,2); }
+    refresh();
+
+    $('#btnApply')?.addEventListener('click', ()=>{
+      try{ const next=JSON.parse(ed.value); STATE=next; saveState(); renderAll(); alert('Applied locally.'); }
+      catch(e){ alert('Invalid JSON: '+e.message); }
+    });
+
+    $('#btnReset')?.addEventListener('click', ()=>{
+      if(confirm('Reset to defaults?')){ STATE=structuredClone(DEFAULT); saveState(); renderAll(); }
+    });
+
+    $('#btnExport')?.addEventListener('click', ()=>{
+      const blob=new Blob([JSON.stringify(STATE,null,2)],{type:'application/json'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download='children-health-hub-snapshot.json'; a.click(); URL.revokeObjectURL(a.href);
+    });
+
+    $('#btnImport')?.addEventListener('click', ()=>{
+      const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json';
+      inp.onchange=()=>{ const f=inp.files[0]; if(!f) return; const r=new FileReader();
+        r.onload=()=>{ try{ const next=JSON.parse(r.result); STATE=next; saveState(); renderAll(); alert('Imported locally.'); }
+          catch(e){ alert('Invalid JSON: '+e.message); } };
+        r.readAsText(f);
+      };
+      inp.click();
+    });
+
+    $('#btnPanic')?.addEventListener('click', ()=>{
+      if(confirm('Panic will wipe local data, unregister the service worker, and reload. Proceed?')){
+        localStorage.removeItem(LS_KEY);
+        if(navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(list=>Promise.all(list.map(r=>r.unregister()))).finally(()=>location.reload());
+        else location.reload();
+      }
+    });
+  }
+
+  // Service worker (inline Blob)
+  (async function registerSW(){
+    if(!('serviceWorker' in navigator)) return;
+    const swCode=`self.addEventListener('install',e=>{e.waitUntil((async()=>{const c=await caches.open('child-health-hub-cache-v2'); await c.addAll(['./']);})())}); self.addEventListener('fetch',e=>{ if(e.request.method!=='GET') return; e.respondWith((async()=>{const c=await caches.open('child-health-hub-cache-v2'); try{const net=await fetch(e.request); c.put(e.request,net.clone()); return net;}catch(err){const cached=await c.match(e.request); if(cached) return cached; const u=new URL(e.request.url); if(u.origin===location.origin && (u.pathname==='/'||u.pathname==='')){ return caches.match('./'); } throw err; })())});`;
+    const blob=new Blob([swCode],{type:'text/javascript'}); const url=URL.createObjectURL(blob);
+    try{ await navigator.serviceWorker.register(url); STATE.meta.offlineReady=true; saveState(); }catch(e){ console.warn('SW registration failed',e); }
+  })();
+
+  // Tabs and render init
+  const tabs=[...document.querySelectorAll('[data-panel]')];
+  [...document.querySelectorAll('.tabbar button')].forEach(b=> b.onclick=()=>{
+    tabs.forEach(p=> p.hidden = p.getAttribute('data-panel')!==b.dataset.tab );
+    document.querySelectorAll('.tabbar button').forEach(x=> x.setAttribute('aria-selected', String(x===b)));
+  });
+
+  function renderAll(){ renderKPIs(); renderMarkers(); renderDir(); renderCards(); renderPB(); renderDW(); renderPolls(); renderBadges(); }
+
+  window.addEventListener('DOMContentLoaded',()=>{
+    initMap(); refreshFeeds(); renderKPIs(); renderCharts();
+    initDirectory(); initCards(); initPlaybooks(); initDW(); initPolls(); initEditor(); renderAll();
+    document.documentElement.classList.toggle('hc', STATE.meta.highContrast);
+    const langBtn=$('#btnLang'); if(langBtn) langBtn.textContent = 'Language: ' + (STATE.meta.lang.toUpperCase());
+  });
+</script>
+</body>
+</html>
